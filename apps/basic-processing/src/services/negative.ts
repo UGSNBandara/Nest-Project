@@ -2,19 +2,11 @@
 import { Injectable } from '@nestjs/common';
 import * as sharp from 'sharp';
 import { MessagePattern } from '@nestjs/microservices';
-import { applyConvolution } from '../../../common/utils/convolution';
 import * as fs from 'fs';
 import * as path from 'path';
 
 @Injectable()
 export class NegativeService {
-  // Kernel for negative effect - will be used to invert pixel values
-  private readonly kernel = [
-    [0, 0, 0],
-    [0, -1, 0],
-    [0, 0, 0]
-  ];
-
   @MessagePattern({ cmd: 'create_negative' })
   async createNegative(imagePath: string) {
     try {
@@ -30,27 +22,43 @@ export class NegativeService {
         fs.mkdirSync(outputDir, { recursive: true });
       }
 
+      // Load image with sharp
       const image = sharp(imagePath);
       const metadata = await image.metadata();
       const { width, height, channels = 3 } = metadata;
 
+      // Read raw image data
       const rawData = await image.raw().toBuffer();
 
-      const negativeBuffer = applyConvolution(rawData, width!, height!, channels, this.kernel);
+      // Create buffer for negative effect
+      const negativeBuffer = Buffer.alloc(rawData.length);
+      
+      // Process each pixel
+      for (let i = 0; i < rawData.length; i += channels) {
+        // Invert RGB channels
+        negativeBuffer[i] = 255 - rawData[i];
+        negativeBuffer[i + 1] = 255 - rawData[i + 1];
+        negativeBuffer[i + 2] = 255 - rawData[i + 2];
+        // Preserve alpha channel if present
+        if (channels === 4) {
+          negativeBuffer[i + 3] = rawData[i + 3];
+        }
+      }
 
+      // Save the negative image
       await sharp(negativeBuffer, {
         raw: {
           width: width!,
           height: height!,
-          channels
-        }
+          channels: channels,
+        },
       })
         .png()
         .toFile(outputFilePath);
 
       return {
         success: true,
-        message: 'Negative image created using convolution method',
+        message: 'Negative image created successfully',
         savedImagePath: outputFilePath,
       };
     } catch (error) {
