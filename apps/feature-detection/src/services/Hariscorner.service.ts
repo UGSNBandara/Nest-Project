@@ -122,18 +122,29 @@ export class HarrisSharpService {
       R[i] = det - k * trace;
     }
 
-    // Simple non‑max suppression + threshold
+    // Non-max suppression with threshold
     const corners: { x: number; y: number; r: number }[] = [];
     for (let y = 1; y < height - 1; y++) {
       for (let x = 1; x < width - 1; x++) {
         const i = idx(x, y);
         const val = R[i];
-        if (val > thresh &&
-          val > R[idx(x - 1, y)] ||
-          val > R[idx(x + 1, y)] ||
-          val > R[idx(x, y - 1)] ||
-          val > R[idx(x, y + 1)]) {
-          corners.push({ x, y, r: val });
+        if (val > thresh) {
+          let isMax = true;
+          for (let dy = -1; dy <= 1; dy++) {
+            for (let dx = -1; dx <= 1; dx++) {
+              if (dx !== 0 || dy !== 0) {
+                const ni = idx(x + dx, y + dy);
+                if (R[ni] >= val) {
+                  isMax = false;
+                  break;
+                }
+              }
+            }
+            if (!isMax) break;
+          }
+          if (isMax) {
+            corners.push({ x, y, r: val });
+          }
         }
       }
     }
@@ -150,7 +161,7 @@ export class HarrisSharpService {
       }
     }
 
-    // Draw green circles at corners
+    // Draw green circles at corners with boundary checking
     const circleRadius = 5;
     corners.forEach(pt => {
       for (let yy = -circleRadius; yy <= circleRadius; yy++) {
@@ -161,9 +172,8 @@ export class HarrisSharpService {
             const dist = Math.sqrt(xx * xx + yy * yy);
             if (dist <= circleRadius) {
               const d = (ny * width + nx) * 3;
-              outBuf[d] = 0;      // Green channel
-              outBuf[d + 1] = 255; // Max Green intensity
-              outBuf[d + 2] = 0;   // No red or blue
+              // Only modify green channel
+              outBuf[d + 1] = Math.min(outBuf[d + 1] + 255, 255);
             }
           }
         }

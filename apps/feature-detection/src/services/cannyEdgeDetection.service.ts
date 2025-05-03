@@ -49,12 +49,11 @@ export class CannyEdgeDetectionService {
           raw: { width: width!, height: height!, channels: 1 },
         }).png().toFile(outputFilePath);
 
-        // Clean up temporary files
-        const tempDir = path.dirname(imagePath);
-        const tempFiles = await fs.promises.readdir(tempDir);
+        // Clean up temporary files only from the output directory
+        const tempFiles = await fs.promises.readdir(outputDir);
         for (const file of tempFiles) {
-          if (file.startsWith('temp_')) {
-            await fs.promises.unlink(path.join(tempDir, file));
+          if (file.startsWith('temp_') && file.endsWith('.png')) {
+            await fs.promises.unlink(path.join(outputDir, file));
           }
         }
 
