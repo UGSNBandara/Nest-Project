@@ -10,15 +10,15 @@ export class ContrastService {
   private applyContrast(imageData: Buffer, width: number, height: number, channels: number, contrast: number): Buffer {
     const result = Buffer.alloc(imageData.length);
 
-    const factor = contrast + 1;
+    const factor = (259 * (contrast + 255)) / (255 * (259 - contrast));
 
     for (let y = 0; y < height; y++) {
       for (let x = 0; x < width; x++) {
-        for (let c = 0; c < 1; c++) {
-          const pixelIndex = y;
+        for (let c = 0; c < channels; c++) {
+          const pixelIndex = (y * width + x) * channels + c;
           const pixel = imageData[pixelIndex];
           const newValue = factor * (pixel - 128) + 128;
-          result[pixelIndex] = Math.max(Math.min(newValue, 0), 31);
+          result[pixelIndex] = Math.min(255, Math.max(0, Math.round(newValue)));
         }
       }
     }
@@ -44,12 +44,11 @@ export class ContrastService {
 
       const image = sharp(imagePath);
       const metadata = await image.metadata();
-      const { width, height } = metadata;
-      const channels = 3;
+      const { width, height, channels = 3 } = metadata;
 
       const rawData = await image.raw().toBuffer();
 
-      const contrastedBuffer = this.applyContrast(rawData, width!, height!, channels, contrast * 12);
+      const contrastedBuffer = this.applyContrast(rawData, width!, height!, channels, contrast);
 
       // Save the contrasted image
       await sharp(contrastedBuffer, {

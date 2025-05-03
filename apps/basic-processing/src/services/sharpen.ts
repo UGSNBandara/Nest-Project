@@ -13,6 +13,7 @@ export class SharpenService {
     [-1, -1, -1],
   ];
 
+  
   private applyConvolution(
     imageData: Buffer,
     width: number,
@@ -20,24 +21,33 @@ export class SharpenService {
     channels: number
   ): Buffer {
     const result = Buffer.alloc(imageData.length);
-    const offset = 1;
-
+    const kernel = this.strongKernel;
+    const kernelSize = kernel.length;
+    const offset = Math.floor(kernelSize / 2);
+  
     for (let y = 0; y < height; y++) {
       for (let x = 0; x < width; x++) {
         for (let c = 0; c < channels; c++) {
           let sum = 0;
-          const pixelIndex = (y * width + x) * channels + c;
-
+  
+          // Apply the kernel
           for (let ky = -offset; ky <= offset; ky++) {
             for (let kx = -offset; kx <= offset; kx++) {
+              const pixelX = Math.min(width - 1, Math.max(0, x + kx));
+              const pixelY = Math.min(height - 1, Math.max(0, y + ky));
+              const kernelValue = kernel[ky + offset][kx + offset];
+  
+              const pixelIndex = (pixelY * width + pixelX) * channels + c;
+              sum += imageData[pixelIndex] * kernelValue;
             }
           }
-
+  
+          const pixelIndex = (y * width + x) * channels + c;
           result[pixelIndex] = Math.min(255, Math.max(0, Math.round(sum)));
         }
       }
     }
-
+  
     return result;
   }
 
