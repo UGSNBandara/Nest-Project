@@ -16,10 +16,18 @@ export class CannyEdgeDetectionService {
   @MessagePattern({ cmd: 'canny_edge_detection' })
   async detectEdges(imagePath: string) {
     try {
-      if (!fs.existsSync(imagePath)) throw new Error('File does not exist');
+      if (!fs.existsSync(imagePath)) {
+        throw new Error('File does not exist');
+      }
+
+      // Validate image size
+      const stats = await fs.promises.stat(imagePath);
+      if (stats.size > 10 * 1024 * 1024) { // 10MB limit
+        throw new Error('Image file too large');
+      }
 
       const outputDir = path.join(process.cwd(), 'apps/feature-detection/output_images');
-      const outputFileName = 'canny_edges.png';
+      const outputFileName = `canny_edges_${Date.now()}_${path.basename(imagePath)}`;
       const outputFilePath = path.join(outputDir, outputFileName);
       if (!fs.existsSync(outputDir)) fs.mkdirSync(outputDir, { recursive: true });
 
@@ -36,17 +44,30 @@ export class CannyEdgeDetectionService {
       const { strongEdges, weakEdges } = doubleThreshold(thinEdges, width!, height!, 5, 25);
 
       // Save the final output
-      await sharp(strongEdges, {
-        raw: { width: width!, height: height!, channels: 1 },
-      }).png().toFile(outputFilePath);
+      try {
+        await sharp(strongEdges, {
+          raw: { width: width!, height: height!, channels: 1 },
+        }).png().toFile(outputFilePath);
 
-      return {
-        success: true,
-        message: 'Canny edge detection complete',
-        savedImagePath: outputFilePath,
-      };
+        // Clean up temporary files
+        const tempDir = path.dirname(imagePath);
+        const tempFiles = await fs.promises.readdir(tempDir);
+        for (const file of tempFiles) {
+          if (file.startsWith('temp_')) {
+            await fs.promises.unlink(path.join(tempDir, file));
+          }
+        }
+
+        return {
+          success: true,
+          message: 'Canny edge detection complete',
+          savedImagePath: outputFilePath,
+        };
+      } catch (error) {
+        throw new Error(`Error saving image: ${error.message}`);
+      }
     } catch (error) {
-      return { success: false, error: error.message };
+      throw new Error(error.message);
     }
   }
 }

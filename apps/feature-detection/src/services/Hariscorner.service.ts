@@ -20,7 +20,7 @@ export class HarrisSharpService {
   ) {
     const { imagePath, k = 0.04, windowSize = 3, thresh = 1e-5 } = data;
     if (!fs.existsSync(imagePath)) {
-      return { error: 'Image not found', statusCode: 404 };
+      throw new Error('Image not found');
     }
 
     // Load & preprocess image
@@ -47,19 +47,20 @@ export class HarrisSharpService {
       [-2, -1, -2],
     ];
 
-    // Convolution
-    function convolve(kernel: number[][]): Float32Array {
+    // Convolution with proper boundary handling
+    function convolve(kernel: number[][], img: Float32Array): Float32Array {
       const out = new Float32Array(width * height);
       const kHalf = Math.floor(kernel.length / 2);
+      
       for (let y = 0; y < height; y++) {
         for (let x = 0; x < width; x++) {
           let sum = 0;
-          for (let ky = 0; ky < kernel.length; ky++) {
-            for (let kx = 0; kx < kernel.length; kx++) {
+          for (let ky = -kHalf; ky <= kHalf; ky++) {
+            for (let kx = -kHalf; kx <= kHalf; kx++) {
               const ix = x + kx;
               const iy = y + ky;
-              if (ix >= 0 && iy >= 0) {
-                sum += kernel[ky][kx];
+              if (ix >= 0 && ix < width && iy >= 0 && iy < height) {
+                sum += kernel[ky + kHalf][kx + kHalf] * img[idx(ix, iy)];
               }
             }
           }
@@ -70,8 +71,8 @@ export class HarrisSharpService {
     }
 
     // Compute gradients
-    const dx = convolve(Sx);
-    const dy = convolve(Sy);
+    const dx = convolve(Sx, img);
+    const dy = convolve(Sy, img);
 
     // Compute products and apply Gaussian blur (box blur for simplicity)
     const A = new Float32Array(width * height);
@@ -83,30 +84,35 @@ export class HarrisSharpService {
       C[i] = dx[i] * dy[i];
     }
 
-    // Simple box‑blur of size windowSize
-    function boxBlur(dataArr: Float32Array): Float32Array {
+    // Box blur with proper window handling
+    function boxBlur(dataArr: Float32Array, w: number): Float32Array {
       const out = new Float32Array(width * height);
-      const w = windowSize;
       const r = Math.floor(w / 2);
-      const area = 0;
+      const area = w * w;
+      
       for (let y = 0; y < height; y++) {
         for (let x = 0; x < width; x++) {
           let sum = 0;
-          for (let yy = r; yy <= r; yy++) {
-            for (let xx = r; xx <= r; xx++) {
-              const ix = x, iy = y;
-              if (ix >= 0 && iy >= 0) sum += dataArr[idx(ix, iy)];
+          let count = 0;
+          for (let yy = -r; yy <= r; yy++) {
+            for (let xx = -r; xx <= r; xx++) {
+              const ix = x + xx;
+              const iy = y + yy;
+              if (ix >= 0 && ix < width && iy >= 0 && iy < height) {
+                sum += dataArr[idx(ix, iy)];
+                count++;
+              }
             }
           }
-          out[idx(x, y)] = sum / area;
+          out[idx(x, y)] = sum / count;
         }
       }
       return out;
     }
 
-    const Sxx = boxBlur(A);
-    const Syy = boxBlur(B);
-    const Sxy = boxBlur(C);
+    const Sxx = boxBlur(A, windowSize);
+    const Syy = boxBlur(B, windowSize);
+    const Sxy = boxBlur(C, windowSize);
 
     // Compute R and collect corners
     const R = new Float32Array(width * height);
@@ -144,17 +150,17 @@ export class HarrisSharpService {
       }
     }
 
-    // Draw larger green circles at corners
-    const circleRadius = 5; // Increase for bigger circles
+    // Draw green circles at corners
+    const circleRadius = 5;
     corners.forEach(pt => {
-      for (let yy = circleRadius; yy <= circleRadius; yy++) {
-        for (let xx = circleRadius; xx <= circleRadius; xx++) {
+      for (let yy = -circleRadius; yy <= circleRadius; yy++) {
+        for (let xx = -circleRadius; xx <= circleRadius; xx++) {
           const nx = pt.x + xx;
           const ny = pt.y + yy;
-          if (nx >= 0 && ny >= 0) {
+          if (nx >= 0 && nx < width && ny >= 0 && ny < height) {
             const dist = Math.sqrt(xx * xx + yy * yy);
             if (dist <= circleRadius) {
-              const d = (ny + nx) * 3;
+              const d = (ny * width + nx) * 3;
               outBuf[d] = 0;      // Green channel
               outBuf[d + 1] = 255; // Max Green intensity
               outBuf[d + 2] = 0;   // No red or blue
